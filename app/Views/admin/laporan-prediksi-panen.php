@@ -233,7 +233,8 @@
                     const {
                         policies
                     } = await res.json();
-                    els.policy.innerHTML = '<option value="">Select Policy</option>';
+                    els.policy.innerHTML =
+                        '<option value="">Pilih Policy Panen</option>'; // Corrected default text
                     policies.forEach(p => {
                         const opt = document.createElement('option');
                         opt.value = p.policy_id;
@@ -306,47 +307,57 @@
                 rows.forEach(r => {
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
-                  <td>${r.PT}</td>
-                  <td>${r.Estate}</td>
-                  <td>${r.Blok}</td>
-                  <td>${r.TanggalIdentifikasi}</td>
-                  <td>${r.RFIDTanaman}</td>
-                  <td>${r.NoTitikTanam}</td>
-                  <td>${r.Longitude || '-'}</td>
-                  <td>${r.Latitude  || '-'}</td>
-                  <td>${r.Status}</td>
-                  <td>${r.Sister}</td>
-                  <td>${r.Umur}</td>
+                    <td>${r.PT}</td>
+                    <td>${r.Estate}</td>
+                    <td>${r.Blok}</td>
+                    <td>${r.TanggalIdentifikasi}</td>
+                    <td>${r.RFIDTanaman}</td>
+                    <td>${r.NoTitikTanam}</td>
+                    <td>${r.Longitude || '-'}</td>
+                    <td>${r.Latitude || '-'}</td>
+                    <td>${r.Status}</td>
+                    <td>${r.Sister}</td>
+                    <td>${r.Umur}</td>
                 `;
                     els.tbody.appendChild(tr);
                 });
             }
 
-            // CHANGED: show & wire download buttons for prediksi
+            // show & wire download buttons
             function showDownloadButtonsPrediksi(params) {
+                const downloadExcelBtn = $('#download-prediksi-excel');
+                const downloadPdfBtn = $('#download-prediksi-pdf');
+
                 if (params) {
-                    // filtered download
-                    $('#download-prediksi-excel')
-                        .attr('href', baseUrl + 'laporan/penentuan-masa-panen/downloadExcel?' + params);
-                    $('#download-prediksi-pdf')
-                        .attr('href', baseUrl + 'laporan/penentuan-masa-panen/downloadPdf?' + params);
+                    // Filtered download (for specific PT, Blok, Policy)
+                    downloadExcelBtn.attr('href', baseUrl + 'laporan/penentuan-masa-panen/downloadExcel?' + params);
+                    downloadPdfBtn.attr('href', baseUrl + 'laporan/penentuan-masa-panen/downloadPdf?' + params);
                 } else {
-                    // “Generate Semua” download
-                    $('#download-prediksi-excel')
-                        .attr('href', baseUrl + 'laporan/penentuan-masa-panen/downloadAllExcel');
-                    $('#download-prediksi-pdf')
-                        .attr('href', baseUrl + 'laporan/penentuan-masa-panen/downloadAllPdf');
+                    // "Generate Semua" download (for all data with policy_id)
+                    // This assumes downloadAllExcel/Pdf also accept policy_id
+                    const policyId = els.policy.value; // Get policy ID for "all" downloads
+                    if (!policyId) {
+                        // This case shouldn't be reached if `genAll` has policy validation,
+                        // but good for robustness.
+                        alert('Policy ID is required for full report downloads.');
+                        $('#download-buttons-prediksi').hide();
+                        return;
+                    }
+                    downloadExcelBtn.attr('href', baseUrl +
+                        'laporan/penentuan-masa-panen/downloadAllExcel?policy_id=' + policyId);
+                    downloadPdfBtn.attr('href', baseUrl + 'laporan/penentuan-masa-panen/downloadAllPdf?policy_id=' +
+                        policyId);
                 }
                 $('#download-buttons-prediksi').show();
             }
 
             // generate filtered report
             els.gen.addEventListener('click', async () => {
-                const pt = els.ptEstate.value,
-                    bl = els.blokId.value,
-                    pol = els.policy.value;
+                const pt = els.ptEstate.value;
+                const bl = els.blokId.value;
+                const pol = els.policy.value; // Get policy ID for filtered report
                 if (!pt || !bl || !pol) {
-                    return alert('Please select PT & Estate, Blok and Policy.');
+                    return alert('Please select PT & Estate, Blok, and Policy.');
                 }
                 try {
                     const res = await fetch(
@@ -363,11 +374,18 @@
 
             // generate all report
             els.genAll.addEventListener('click', async () => {
+                const pol = els.policy.value; // Get policy ID for all report
+                if (!pol) {
+                    return alert('Please select a Policy for the "Generate All" report.');
+                }
                 try {
-                    const res = await fetch(`${baseUrl}laporan/penentuan-masa-panen/data-all`);
+                    // Pass policy_id to the data-all endpoint
+                    const res = await fetch(
+                        `${baseUrl}laporan/penentuan-masa-panen/data-all?policy_id=${pol}`);
                     const data = await res.json();
                     populateTable(data);
-                    showDownloadButtonsPrediksi(''); // no filters
+                    // Update download links for "all" data, including policy_id
+                    showDownloadButtonsPrediksi(''); // Pass empty string as a flag for "all" downloads
                 } catch (e) {
                     console.error(e);
                     alert('Error fetching all data');

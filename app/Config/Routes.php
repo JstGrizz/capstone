@@ -231,6 +231,10 @@ $routes->group('', ['filter' => 'authFilter'], function ($routes) {
     $routes->get('laporan/penentuan-masa-panen/downloadAllExcel', 'LaporanController::downloadAllPrediksiPanenExcel');
     $routes->get('laporan/penentuan-masa-panen/downloadAllPdf',   'LaporanController::downloadAllPrediksiPanenPdf');
 
+    #--------------------------------------------------------------------
+    # IDENTIFIKASI TANAMAN UPDATE LOSSES PYTHON
+    #--------------------------------------------------------------------
+    $routes->post('identifikasi-tanaman/predictDisease', 'IdentifikasiTanamanController::predictDisease');
 
     #--------------------------------------------------------------------
     # LAPORAN HISTORY LOSSES

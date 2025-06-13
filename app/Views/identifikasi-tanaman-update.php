@@ -204,249 +204,307 @@
     <script src="<?= base_url('/assets/static/js/pages/simple-datatables.js'); ?>"></script>
     <script src=" <?= base_url('/assets/static/js/pages/simple-datatables.js'); ?>"></script>
     <script>
-        // Function to fetch blocks when a PT & Estate is selected
-        function updateBloks() {
-            const ptEstateId = document.getElementById('pt_estate').value;
-            const blokSelect = document.getElementById('blok_id');
-
-            if (ptEstateId) {
+        document.addEventListener('DOMContentLoaded', () => {
+            // 1) Fetch blocks for PT & Estate
+            window.updateBloks = () => {
+                const ptEstateId = document.getElementById('pt_estate').value;
+                const blokSelect = document.getElementById('blok_id');
+                if (!ptEstateId) {
+                    blokSelect.innerHTML = '<option value="">Select Blok</option>';
+                    return;
+                }
                 fetch(`<?= base_url('identifikasi-tanaman/getBloksByPtEstateId'); ?>/${ptEstateId}`)
-                    .then(response => response.json())
+                    .then(r => r.json())
                     .then(data => {
-                        blokSelect.innerHTML = '<option value="">Select Blok</option>'; // Reset blok options
+                        blokSelect.innerHTML = '<option value="">Select Blok</option>';
                         data.bloks.forEach(blok => {
-                            const option = document.createElement('option');
-                            option.value = blok.blok_id;
-                            option.textContent = blok.nama_blok;
-                            blokSelect.appendChild(option);
+                            const opt = document.createElement('option');
+                            opt.value = blok.blok_id;
+                            opt.textContent = blok.nama_blok;
+                            blokSelect.appendChild(opt);
                         });
-
-                        // Auto-fill fields after fetching blocks
                         autoFillFields();
                     })
-                    .catch(error => console.error('Error fetching blocks:', error));
-            } else {
-                blokSelect.innerHTML = '<option value="">Select Blok</option>'; // Reset blok if no PT selected
-            }
-        }
+                    .catch(err => console.error('Error fetching blocks:', err));
+            };
 
-        // Function to auto-fill the fields when a blok is selected
-        function autoFillFields() {
-            const ptEstateId = document.getElementById('pt_estate').value;
-            const blokId = document.getElementById('blok_id').value;
-
-            if (ptEstateId && blokId) {
+            // 2) Auto‐fill hectare data
+            window.autoFillFields = () => {
+                const ptEstateId = document.getElementById('pt_estate').value;
+                const blokId = document.getElementById('blok_id').value;
+                if (!(ptEstateId && blokId)) return;
                 fetch(
                         `<?= base_url('identifikasi-tanaman/getHectareStatementByPtEstateIdAndBlockId'); ?>/${ptEstateId}/${blokId}`
                     )
-                    .then(response => response.json())
+                    .then(r => r.json())
                     .then(data => {
-                        if (data) {
-                            document.getElementById('tahun_tanam').value = data.tahun_tanam;
-                            document.getElementById('bulan_tanam').value = data.bulan_tanam;
-                            document.getElementById('luas_tanah').value = data.luas_tanah;
-                            document.getElementById('varian_bibit').value = data.varian_bibit;
-                            document.getElementById('week').value = data.week; // Auto-fill week
-                        }
+                        if (!data) return;
+                        document.getElementById('tahun_tanam').value = data.tahun_tanam;
+                        document.getElementById('bulan_tanam').value = data.bulan_tanam;
+                        document.getElementById('luas_tanah').value = data.luas_tanah;
+                        document.getElementById('varian_bibit').value = data.varian_bibit;
+                        document.getElementById('week').value = data.week;
                     })
-                    .catch(error => console.error('Error fetching hectare statement data:', error));
-            }
-        }
+                    .catch(err => console.error('Error fetching hectare data:', err));
+            };
 
-        // Function to auto-fill longitude and latitude if no titik tanam is inputed
-        function autoFillTitikTanam() {
-            const noTitikTanam = document.getElementById('no_titik_tanam').value;
-            const ptEstateId = document.getElementById('pt_estate')
-                .value;
-            const blokId = document.getElementById('blok_id').value;
-            const longitudeField = document.getElementById('longitude');
-            const latitudeField = document.getElementById('latitude');
+            // 3) Auto‐fill longitude & latitude
+            window.autoFillTitikTanam = () => {
+                const noTT = document.getElementById('no_titik_tanam').value;
+                const ptE = document.getElementById('pt_estate').value;
+                const blok = document.getElementById('blok_id').value;
+                const longF = document.getElementById('longitude');
+                const latF = document.getElementById('latitude');
 
-            if (noTitikTanam && ptEstateId && blokId) {
-                fetch(
-                        `<?= base_url('identifikasi-tanaman/getNoTitikTanamData'); ?>/${noTitikTanam}/${ptEstateId}/${blokId}`
-                    )
-                    .then(response => response.json())
+                if (noTT && ptE && blok) {
+                    fetch(`<?= base_url('identifikasi-tanaman/getNoTitikTanamData'); ?>/${noTT}/${ptE}/${blok}`)
+                        .then(r => r.json())
+                        .then(d => {
+                            if (d.found) {
+                                longF.value = d.longitude;
+                                latF.value = d.latitude;
+                                longF.readOnly = latF.readOnly = true;
+                            } else {
+                                longF.readOnly = latF.readOnly = false;
+                            }
+                        })
+                        .catch(err => console.error('Error fetching titik data:', err));
+                } else {
+                    longF.readOnly = latF.readOnly = false;
+                    longF.value = latF.value = '';
+                }
+            };
+
+            // 4) Build tanaman cards dynamically
+            window.autoFillTanamanData = () => {
+                const noTT = document.getElementById('no_titik_tanam').value;
+                const container = document.getElementById('tanaman-container');
+                if (!noTT) return;
+
+                fetch(`<?= base_url('identifikasi-tanaman/getActiveTanamanData'); ?>/${noTT}`)
+                    .then(r => r.json())
                     .then(data => {
-                        if (data.found) {
-                            // If data found, populate fields and make them read-only
-                            document.getElementById('longitude').value = data.longitude;
-                            document.getElementById('latitude').value = data.latitude;
-                            longitudeField.readOnly = true;
-                            latitudeField.readOnly = true;
-                        } else {
-                            // If no data found, keep fields editable
-                            longitudeField.readOnly = false;
-                            latitudeField.readOnly = false;
-                        }
-                    })
-                    .catch(error => console.error('Error fetching No Titik Tanam data:', error));
-            } else {
-                // Reset fields if no Titik Tanam or required fields are provided
-                longitudeField.readOnly = false;
-                latitudeField.readOnly = false;
-                longitudeField.value = '';
-                latitudeField.value = '';
-            }
-        }
+                        if (!data.success) return alert(data.error || 'No active tanaman found');
+                        container.innerHTML = '';
+                        data.tanaman.forEach((tanaman, i) => {
+                            const formHtml = `
+    <div class="card mb-3">
+      <div class="card-header"><h4 class="card-title">Tanaman ${i+1}</h4></div>
+      <div class="card-body">
+        <div class="row">
+          <div class="col-md-6">
+            <!-- RFID -->
+            <div class="form-group">
+              <label>RFID</label>
+              <input type="text" class="form-control" name="rfid_tanaman[${i}]"
+                     id="rfid_tanaman_${i}" value="${tanaman.rfid_tanaman}" readonly>
+            </div>
+            <div class="form-group">
+              <label>Update RFID?</label>
+              <input type="checkbox" class="form-check-input"
+                     id="update_rfid_${i}"
+                     onchange="toggleNewRfid(${i})">
+              <div id="updateRfidFields_${i}" style="display:none;margin-top:8px;">
+                <input type="text" class="form-control"
+                       name="new_rfid[${i}]"
+                       placeholder="Enter new RFID">
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Sister</label>
+              <input type="text" class="form-control"
+                     name="sister[${i}]"
+                     value="${tanaman.sister}" readonly>
+            </div>
+          </div>
 
-        // Add event listener to fetch data when block is selected
-        document.getElementById('blok_id').addEventListener('change', autoFillFields);
-        // Add event listener to the No Titik Tanam input field
-        document.getElementById('no_titik_tanam').addEventListener('change', autoFillTitikTanam);
+          <div class="col-md-6">
+            <!-- Status & Losses Toggle -->
+            <div class="form-group">
+              <label>Status</label>
+              <input type="text" class="form-control"
+                     name="status[${i}]"
+                     id="status_tanaman_${i}"
+                     value="${tanaman.nama_status}" readonly>
+            </div>
+            <div class="form-group">
+              <label>Update Losses?</label>
+              <input type="checkbox" class="form-check-input"
+                     id="update_losses_${i}"
+                     onchange="toggleLossesFields(${i})">
+            </div>
 
-        // Function to auto-fill the fields when a no_titik_tanam is provided
-        function autoFillTanamanData() {
-            const noTitikTanam = document.getElementById('no_titik_tanam').value;
-            const tanamanContainer = document.getElementById('tanaman-container');
+            <div id="lossesFields_${i}" style="display:none;margin-top:8px;">
+              <select class="form-select"
+                      name="penyebab_loses[${i}]"
+                      id="penyebab_loses_${i}">
+                <option>Select Penyebab Loses</option>
+              </select>
+              <textarea class="form-control mt-2"
+                        name="deskripsi_loses[${i}]"
+                        placeholder="Isi Deskripsi Penyebab Loses"></textarea>
 
-            if (noTitikTanam) {
-                fetch(`<?= base_url('identifikasi-tanaman/getActiveTanamanData'); ?>/${noTitikTanam}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            // Clear any existing tanaman fields
-                            tanamanContainer.innerHTML = '';
+              <!-- ▶▶ Only show when “Update Losses?” is checked -->
+              <div id="diseaseFields_${i}" style="display:none;margin-top:16px;">
+                <div class="form-group">
+                  <label for="tanaman_image_${i}">Upload Photo</label>
+                  <input type="file" class="form-control"
+                         name="tanaman_image[${i}]"
+                         id="tanaman_image_${i}"
+                         accept="image/*"
+                         onchange="previewImage(${i})">
+                  <img id="image_preview_${i}"
+                       src=""
+                       alt="Preview"
+                       style="max-width:150px; display:none; margin-top:8px;">
+                </div>
+                <div class="form-group mt-2">
+                  <button type="button"
+                          class="btn btn-sm btn-outline-info"
+                          onclick="detectDisease(${i})">
+                    🔍 Detect Disease
+                  </button>
+                  <div id="detect_result_${i}"
+                       style="margin-top:6px;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
 
-                            // Loop through each active tanaman and create a new form section for it
-                            data.tanaman.forEach((tanaman, index) => {
-                                const formHtml = `
-                            <div class="card">
-                                <div class="card-header">
-                                    <h4 class="card-title">Tanaman ${index + 1}</h4>
-                                </div>
-                                <div class="card-body">
-                                    <div class="row">
-                                        <div class="col-md-6">
-                                            <div class="form-group">
-                                                <label>RFID</label>
-                                                <input type="text" class="form-control" name="rfid_tanaman[${index}]"
-                                                    id="rfid_tanaman_${index}" value="${tanaman.rfid_tanaman}" readonly />
-                                            </div>
-                                            <div class="form-group">
-                                                <label>Update RFID?</label>
-                                                <input type="checkbox" class="form-check-input" id="update_rfid_${index}" onchange="toggleNewRfid(${index})" />
-                                                <div id="updateRfidFields_${index}" style="display: none;">
-                                                    <input type="text" class="form-control" name="new_rfid[${index}]"
-                                                        id="update_rfid_tanaman_${index}" placeholder="Enter new RFID" />
-                                                </div>
-                                            </div>
-                                            <div class="form-group">
-                                                <label>Sister</label>
-                                                <input type="text" class="form-control" name="sister[${index}]"
-                                                    id="sister_${index}" value="${tanaman.sister}" readonly />
-                                            </div>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <div class="form-group">
-                                                <label>Status</label>
-                                                <input type="text" class="form-control" name="status[${index}]"
-                                                    id="status_tanaman_${index}" value="${tanaman.nama_status}" readonly />
-                                            </div>
-                                            <div class="form-group">
-                                                <label>Update Losses?</label>
-                                                <input type="checkbox" class="form-check-input" id="update_losses_${index}" onchange="toggleLossesFields(${index})" />
-                                                <div id="lossesFields_${index}" style="display: none;">
-                                                    <select class="form-select" name="penyebab_loses[${index}]" id="penyebab_loses_${index}">
-                                                        <option>Select Penyebab Loses</option>
-                                                    </select>
-                                                    <br>
-                                                    <textarea class="form-control" name="deskripsi_loses[${index}]"
-                                                        placeholder="Isi Deskripsi Penyebab Loses"></textarea>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>`;
-                                tanamanContainer.innerHTML += formHtml;
-
-                                // Fetch and populate losses dropdown after form is generated
-                                fetchLossesOptions(index);
-                            });
-                        } else {
-                            alert(data.error || 'No active tanaman found');
-                        }
-                    })
-                    .catch(error => console.error('Error fetching active tanaman data:', error));
-            }
-        }
-
-        // Fetch Master Losses and populate the dropdown
-        function fetchLossesOptions(index) {
-            fetch(`<?= base_url('identifikasi-tanaman/getLossesOptions') ?>`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        const lossesSelect = document.getElementById(`penyebab_loses_${index}`);
-                        data.losses.forEach(loss => {
-                            const option = document.createElement("option");
-                            option.value = loss.losses_id;
-                            option.text = loss.penyebab_losses;
-                            lossesSelect.appendChild(option);
+        </div>
+      </div>
+    </div>`;
+                            container.insertAdjacentHTML('beforeend', formHtml);
+                            fetchLossesOptions(i);
                         });
-                    }
-                })
-                .catch(error => console.error('Error fetching losses options:', error));
-        }
+                    })
+                    .catch(err => console.error('Error fetching active tanaman:', err));
+            };
 
-        // Toggle RFID input field visibility
-        function toggleNewRfid(index) {
-            const checkbox = document.getElementById(`update_rfid_${index}`);
-            const newRfidFields = document.getElementById(`updateRfidFields_${index}`);
-            newRfidFields.style.display = checkbox.checked ? 'block' : 'none';
-        }
+            // 5) Populate losses dropdown
+            window.fetchLossesOptions = index => {
+                fetch(`<?= base_url('identifikasi-tanaman/getLossesOptions'); ?>`)
+                    .then(r => r.json())
+                    .then(d => {
+                        if (!d.success) return;
+                        const sel = document.getElementById(`penyebab_loses_${index}`);
+                        d.losses.forEach(loss => {
+                            const opt = document.createElement('option');
+                            opt.value = loss.losses_id;
+                            opt.textContent = loss.penyebab_losses;
+                            sel.appendChild(opt);
+                        });
+                    })
+                    .catch(err => console.error('Error fetching losses options:', err));
+            };
 
-        // Toggle losses fields visibility
-        function toggleLossesFields(index) {
-            const checkbox = document.getElementById(`update_losses_${index}`);
-            const lossesFields = document.getElementById(`lossesFields_${index}`);
-            lossesFields.style.display = checkbox.checked ? 'block' : 'none';
-        }
+            // 6) Toggle RFID fields
+            window.toggleNewRfid = i => {
+                const chk = document.getElementById(`update_rfid_${i}`);
+                document.getElementById(`updateRfidFields_${i}`)
+                    .style.display = chk.checked ? 'block' : 'none';
+            };
 
-        // Add event listener to the No Titik Tanam input field
-        document.getElementById('no_titik_tanam').addEventListener('change', function() {
-            // Clear existing fields when No Titik Tanam is cleared
-            if (!this.value) {
-                document.getElementById('tanaman-container').innerHTML = '';
-            }
-            autoFillTanamanData();
-        });
-        document.getElementById('form-identifikasi-tanaman-update').addEventListener('submit', function(event) {
-            event.preventDefault(); // Prevent default form submission
+            // 7) Toggle losses & disease UI
+            window.toggleLossesFields = index => {
+                const chk = document.getElementById(`update_losses_${index}`);
+                const show = chk.checked;
+                document.getElementById(`lossesFields_${index}`)
+                    .style.display = show ? 'block' : 'none';
+                document.getElementById(`diseaseFields_${index}`)
+                    .style.display = show ? 'block' : 'none';
+            };
 
-            const formData = new FormData(this); // Create FormData object from the form
+            // 8) Preview image upload
+            window.previewImage = i => {
+                const inp = document.getElementById(`tanaman_image_${i}`);
+                const img = document.getElementById(`image_preview_${i}`);
+                if (!inp.files?.[0]) {
+                    img.style.display = 'none';
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = e => {
+                    img.src = e.target.result;
+                    img.style.display = 'block';
+                };
+                reader.readAsDataURL(inp.files[0]);
+            };
 
-            fetch('<?= base_url('identifikasi-tanaman/updateIdentifikasiTanaman'); ?>', {
-                    method: 'POST',
-                    body: formData,
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        alert(data.message); // Show success message
-                        window.location.reload();
+            window.detectDisease = async i => {
+                const inp = document.getElementById(`tanaman_image_${i}`);
+                const resultDiv = document.getElementById(`detect_result_${i}`);
+                if (!inp.files?.[0]) {
+                    return alert('Please select an image first.');
+                }
+                resultDiv.textContent = 'Detecting…';
+                const form = new FormData();
+                form.append('image', inp.files[0]);
+
+                try {
+                    // Send the image data to the backend for prediction
+                    const res = await fetch(`<?= base_url('identifikasi-tanaman/predictDisease'); ?>`, {
+                        method: 'POST',
+                        body: form
+                    });
+
+                    const data = await res.json();
+
+                    if (data.hasil) {
+                        // Display the prediction result (disease prediction result)
+                        resultDiv.innerHTML = `<strong>${data.hasil}</strong>`; // Only show the result
                     } else {
-                        alert(data.message); // Show error message
+                        // Show error message if no result is found
+                        resultDiv.innerHTML =
+                            `<span class="text-danger">${data.error || 'No result'}</span>`;
                     }
-                })
-                .catch(error => {
-                    console.error('Error submitting form:', error);
-                    alert('An error occurred during submission.');
-                });
-        });
-    </script>
-    <script>
-        // disable Enter on update form
-        document.addEventListener('DOMContentLoaded', () => {
+                } catch (err) {
+                    // Handle any errors that occur during the fetch process
+                    console.error(err);
+                    resultDiv.innerHTML = '<span class="text-danger">Error during detection</span>';
+                }
+            };
+
+            // 10) Hook up PT‐Estate & Titik listeners
+            document.getElementById('blok_id')
+                .addEventListener('change', autoFillFields);
+
+            const titikInput = document.getElementById('no_titik_tanam');
+            titikInput.addEventListener('change', () => {
+                autoFillTitikTanam();
+                if (!titikInput.value) {
+                    document.getElementById('tanaman-container').innerHTML = '';
+                }
+                autoFillTanamanData();
+            });
+
+            // 11) Form submit + disable Enter key
             const form = document.getElementById('form-identifikasi-tanaman-update');
-            form.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter' || e.keyCode === 13) {
+            form.addEventListener('submit', e => {
+                e.preventDefault();
+                const fd = new FormData(form);
+                fetch(`<?= base_url('identifikasi-tanaman/updateIdentifikasiTanaman'); ?>`, {
+                        method: 'POST',
+                        body: fd
+                    })
+                    .then(r => r.json())
+                    .then(d => {
+                        alert(d.message);
+                        if (d.success) window.location.reload();
+                    })
+                    .catch(err => {
+                        console.error('Error submitting form:', err);
+                        alert('An error occurred during submission.');
+                    });
+            });
+            form.addEventListener('keydown', e => {
+                if (e.key === 'Enter') {
                     e.preventDefault();
                     return false;
                 }
             });
-        });
+
+        }); // end DOMContentLoaded
     </script>
 </body>
 

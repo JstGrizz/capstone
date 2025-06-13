@@ -13,6 +13,7 @@ use App\Models\MasterLossesModel;
 
 class IdentifikasiTanamanController extends ResourceController
 {
+
     public function new()
     {
         $session = session();
@@ -456,5 +457,35 @@ class IdentifikasiTanamanController extends ResourceController
         }
 
         return $this->response->setJSON(['success' => true, 'message' => 'Data updated successfully.']);
+    }
+    public function predictDisease()
+    {
+        $file = $this->request->getFile('image');
+        if (!$file || !$file->isValid()) {
+            return $this->response->setJSON(['error' => 'No image uploaded']);
+        }
+
+        // Use the PHP temp file directly (without moving)
+        $tmpPath = $file->getTempName();
+
+        // Adjust the Python executable path (make sure Python is installed and available)
+        $python = 'python';  // For Windows with virtual environment
+        $script = ROOTPATH . 'predict.py';  // Pointing to predict.py in the root of your project
+
+        // Build the command to execute the Python script
+        $cmd = escapeshellcmd("$python $script " . escapeshellarg($tmpPath)) . ' 2>&1';
+
+        // Run the command
+        $output = shell_exec($cmd);
+
+        // Decode the JSON output from Python
+        $json = json_decode($output, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return $this->response->setStatusCode(500)
+                ->setJSON(['error' => 'Python error', 'detail' => $output]);
+        }
+
+        // Only return the prediction result
+        return $this->response->setJSON(['hasil' => $json['hasil']]);  // Assuming 'hasil' is the prediction result key
     }
 }

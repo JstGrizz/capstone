@@ -292,10 +292,35 @@ class LaporanController extends ResourceController
 
     public function fetchAllPrediksiData()
     {
+        // 1) Ambil parameter GET: policy_id
+        $policyId = $this->request->getGet('policy_id');
+
+        // Validate policy_id is provided
+        if (! $policyId) {
+            return $this->response
+                ->setStatusCode(400)
+                ->setJSON(['error' => 'policy_id wajib diisi.']);
+        }
+
+        // 2) Ambil policy
+        $policy = (new PolicyModel())->find($policyId);
+        if (! $policy) {
+            return $this->response
+                ->setStatusCode(404)
+                ->setJSON(['error' => 'Policy tidak ditemukan.']);
+        }
+
+        // 3) Ambil semua tanaman belum panen
         $tanamans = (new TanamanModel())
             ->where('tgl_akhir_identifikasi', null)
             ->findAll();
 
+        // If no unharvested plants found, return an empty array
+        if (empty($tanamans)) {
+            return $this->response->setJSON([]);
+        }
+
+        // 4) Load semua status, bikin map [status_id => nama_status]
         $statusModel = new StatusModel();
         $allStatuses = $statusModel->findAll();
         $statusMap = [];
@@ -303,43 +328,82 @@ class LaporanController extends ResourceController
             $statusMap[$s['status_id']] = $s['nama_status'];
         }
 
+        // 5) Initialize HectareStatementModel for later use
         $hectareStatementModel = new HectareStatementModel();
 
-        $report = [];
         $now = new \DateTime();
 
+        // Prepare policy dates for comparison
+        $akhirDate  = $policy['akhir'] !== '0000-00-00 00:00:00'
+            ? new \DateTime($policy['akhir'])
+            : null;
+        $startDate  = $policy['start'] !== '0000-00-00 00:00:00'
+            ? new \DateTime($policy['start'])
+            : null;
+
+        $report = [];
+
         foreach ($tanamans as $t) {
-            // Step 3: get hectare statement by hs_id
-            $hs = $hectareStatementModel->select('hectare_statement.*, master_blok.nama_blok, pt_estate.pt, pt_estate.estate')
+            // a) Get Hectare Statement for the current plant
+            // Join with master_blok and pt_estate to get full details
+            $hs = $hectareStatementModel
+                ->select('hectare_statement.*, master_blok.nama_blok, pt_estate.pt, pt_estate.estate')
                 ->join('master_blok', 'master_blok.blok_id = hectare_statement.blok_id', 'left')
                 ->join('pt_estate', 'pt_estate.pt_estate_id = hectare_statement.pt_estate_id', 'left')
                 ->where('hs_id', $t['hs_id'])
                 ->first();
 
+            // Skip if no hectare statement found for the plant
             if (!$hs) {
-                continue; // skip if no hectare statement found
+                continue;
             }
 
-            $tglIdent = new \DateTime($t['tgl_mulai_identifikasi']);
+            // b) Hitung minggu sejak identifikasi
+            $tglIdent        = new \DateTime($t['tgl_mulai_identifikasi']);
             $weeksSinceIdent = floor($now->diff($tglIdent)->days / 7);
 
+            // c) Umur awal (kolom minggu)
             $initialWeek = (int)$t['minggu'];
+
+            // d) Total umur sekarang
             $currentAge = $initialWeek + $weeksSinceIdent;
 
+            // e) Pilih threshold policy based on tgl_mulai_identifikasi
+            if ($akhirDate && $tglIdent > $akhirDate) {
+                $threshold = (int)$policy['lama'];
+            } elseif ($startDate && $tglIdent > $startDate) {
+                $threshold = (int)$policy['baru'];
+            } else {
+                // Default to 'lama' if neither condition matches (e.g., date before start or '0000-00-00')
+                $threshold = (int)$policy['lama'];
+            }
+
+            // Ensure threshold is valid to prevent division by zero or illogical filters
+            if ($threshold <= 0) {
+                continue; // Skip if policy threshold is invalid or zero
+            }
+
+            // f) Filter only umur ≥ (threshold − 1)
+            if ($currentAge < $threshold - 1) {
+                continue;
+            }
+
+            // g) Ambil nama status dari status_id
             $namaStatus = $statusMap[$t['status_id']] ?? '—';
 
+            // h) Tambahkan ke hasil
             $report[] = [
-                'PT' => $hs['pt'] ?? '—',
-                'Estate' => $hs['estate'] ?? '—',
-                'Blok' => $hs['nama_blok'] ?? ($hs['blok_id'] ?? '—'),
-                'TanggalIdentifikasi' => $t['tgl_mulai_identifikasi'],
-                'RFIDTanaman' => $t['rfid_tanaman'],
-                'NoTitikTanam' => $t['no_titik_tanam'],
-                'Longitude'           => $t['longitude_tanam'],
-                'Latitude'            => $t['latitude_tanam'],
-                'Status' => $namaStatus,
-                'Sister' => $t['sister'],
-                'Umur' => $currentAge,
+                'PT'                    => $hs['pt'] ?? '—',
+                'Estate'                => $hs['estate'] ?? '—',
+                'Blok'                  => $hs['nama_blok'] ?? ($hs['blok_id'] ?? '—'),
+                'TanggalIdentifikasi'   => $t['tgl_mulai_identifikasi'],
+                'RFIDTanaman'           => $t['rfid_tanaman'],
+                'NoTitikTanam'          => $t['no_titik_tanam'],
+                'Longitude'             => $t['longitude_tanam'],
+                'Latitude'              => $t['latitude_tanam'],
+                'Status'                => $namaStatus,
+                'Sister'                => $t['sister'],
+                'Umur'                  => $currentAge,
             ];
         }
 
