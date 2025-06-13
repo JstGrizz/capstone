@@ -279,12 +279,18 @@
             window.autoFillTanamanData = () => {
                 const noTT = document.getElementById('no_titik_tanam').value;
                 const container = document.getElementById('tanaman-container');
-                if (!noTT) return;
+                if (!noTT) {
+                    container.innerHTML = ''; // Clear container if no titik is selected
+                    return;
+                }
 
                 fetch(`<?= base_url('identifikasi-tanaman/getActiveTanamanData'); ?>/${noTT}`)
                     .then(r => r.json())
                     .then(data => {
-                        if (!data.success) return alert(data.error || 'No active tanaman found');
+                        if (!data.success) {
+                            container.innerHTML = ''; // Clear container if no active tanaman
+                            return alert(data.error || 'No active tanaman found');
+                        }
                         container.innerHTML = '';
                         data.tanaman.forEach((tanaman, i) => {
                             const formHtml = `
@@ -293,79 +299,77 @@
       <div class="card-body">
         <div class="row">
           <div class="col-md-6">
-            <!-- RFID -->
             <div class="form-group">
               <label>RFID</label>
               <input type="text" class="form-control" name="rfid_tanaman[${i}]"
-                     id="rfid_tanaman_${i}" value="${tanaman.rfid_tanaman}" readonly>
+                           id="rfid_tanaman_${i}" value="${tanaman.rfid_tanaman}" readonly>
+              <input type="hidden" name="tanaman_id[${i}]" value="${tanaman.tanaman_id}">
             </div>
             <div class="form-group">
               <label>Update RFID?</label>
               <input type="checkbox" class="form-check-input"
-                     id="update_rfid_${i}"
-                     onchange="toggleNewRfid(${i})">
+                           id="update_rfid_${i}" name="update_rfid[${i}]"
+                           onchange="toggleNewRfid(${i})">
               <div id="updateRfidFields_${i}" style="display:none;margin-top:8px;">
                 <input type="text" class="form-control"
-                       name="new_rfid[${i}]"
-                       placeholder="Enter new RFID">
+                               name="new_rfid[${i}]"
+                               placeholder="Enter new RFID">
               </div>
             </div>
             <div class="form-group">
               <label>Sister</label>
               <input type="text" class="form-control"
-                     name="sister[${i}]"
-                     value="${tanaman.sister}" readonly>
+                           name="sister[${i}]"
+                           value="${tanaman.sister}" readonly>
             </div>
           </div>
 
           <div class="col-md-6">
-            <!-- Status & Losses Toggle -->
             <div class="form-group">
               <label>Status</label>
               <input type="text" class="form-control"
-                     name="status[${i}]"
-                     id="status_tanaman_${i}"
-                     value="${tanaman.nama_status}" readonly>
+                           name="status[${i}]"
+                           id="status_tanaman_${i}"
+                           value="${tanaman.nama_status}" readonly>
             </div>
             <div class="form-group">
               <label>Update Losses?</label>
               <input type="checkbox" class="form-check-input"
-                     id="update_losses_${i}"
-                     onchange="toggleLossesFields(${i})">
+                           id="update_losses_${i}" name="update_losses[${i}]"
+                           onchange="toggleLossesFields(${i})">
             </div>
 
             <div id="lossesFields_${i}" style="display:none;margin-top:8px;">
               <select class="form-select"
-                      name="penyebab_loses[${i}]"
-                      id="penyebab_loses_${i}">
-                <option>Select Penyebab Loses</option>
+                            name="penyebab_loses[${i}]"
+                            id="penyebab_loses_${i}">
+                <option value="">Select Penyebab Loses</option>
               </select>
               <textarea class="form-control mt-2"
-                        name="deskripsi_loses[${i}]"
-                        placeholder="Isi Deskripsi Penyebab Loses"></textarea>
+                                 name="deskripsi_loses[${i}]"
+                                 placeholder="Isi Deskripsi Penyebab Loses"></textarea>
 
-              <!-- ▶▶ Only show when “Update Losses?” is checked -->
               <div id="diseaseFields_${i}" style="display:none;margin-top:16px;">
                 <div class="form-group">
                   <label for="tanaman_image_${i}">Upload Photo</label>
                   <input type="file" class="form-control"
-                         name="tanaman_image[${i}]"
-                         id="tanaman_image_${i}"
-                         accept="image/*"
-                         onchange="previewImage(${i})">
+                                 name="tanaman_image[${i}]"
+                                 id="tanaman_image_${i}"
+                                 accept="image/*"
+                                 onchange="previewImage(${i})">
                   <img id="image_preview_${i}"
-                       src=""
-                       alt="Preview"
-                       style="max-width:150px; display:none; margin-top:8px;">
+                                 src=""
+                                 alt="Preview"
+                                 style="max-width:150px; display:none; margin-top:8px;">
                 </div>
                 <div class="form-group mt-2">
                   <button type="button"
-                          class="btn btn-sm btn-outline-info"
-                          onclick="detectDisease(${i})">
+                                  class="btn btn-sm btn-outline-info"
+                                  onclick="detectDisease(${i})">
                     🔍 Detect Disease
                   </button>
                   <div id="detect_result_${i}"
-                       style="margin-top:6px;"></div>
+                                 style="margin-top:6px;"></div>
                 </div>
               </div>
             </div>
@@ -421,6 +425,7 @@
                 const img = document.getElementById(`image_preview_${i}`);
                 if (!inp.files?.[0]) {
                     img.style.display = 'none';
+                    img.src = ''; // Clear image source
                     return;
                 }
                 const reader = new FileReader();
@@ -480,22 +485,23 @@
 
             // 11) Form submit + disable Enter key
             const form = document.getElementById('form-identifikasi-tanaman-update');
-            form.addEventListener('submit', e => {
+            form.addEventListener('submit', async e => { // Add async here
                 e.preventDefault();
                 const fd = new FormData(form);
-                fetch(`<?= base_url('identifikasi-tanaman/updateIdentifikasiTanaman'); ?>`, {
-                        method: 'POST',
-                        body: fd
-                    })
-                    .then(r => r.json())
-                    .then(d => {
-                        alert(d.message);
-                        if (d.success) window.location.reload();
-                    })
-                    .catch(err => {
-                        console.error('Error submitting form:', err);
-                        alert('An error occurred during submission.');
-                    });
+
+                try {
+                    const res = await fetch(
+                        `<?= base_url('identifikasi-tanaman/updateIdentifikasiTanaman'); ?>`, {
+                            method: 'POST',
+                            body: fd
+                        });
+                    const d = await res.json();
+                    alert(d.message);
+                    if (d.success) window.location.reload();
+                } catch (err) {
+                    console.error('Error submitting form:', err);
+                    alert('An error occurred during submission.');
+                }
             });
             form.addEventListener('keydown', e => {
                 if (e.key === 'Enter') {

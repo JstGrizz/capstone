@@ -401,12 +401,21 @@ class IdentifikasiTanamanController extends ResourceController
 
     public function updateIdentifikasiTanaman()
     {
-        $ptEstateId = $this->request->getPost('pt_estate');
-        $blokId = $this->request->getPost('blok_id');
-        $rfidTanaman = $this->request->getPost('rfid_tanaman');
-        $newRfid = $this->request->getPost('new_rfid');
-        $lossesId = $this->request->getPost('penyebab_loses');
-        $deskripsiLoses = $this->request->getPost('deskripsi_loses');
+        $data = $this->request->getPost();
+        $files = $this->request->getFiles(); // Ambil file yang diupload
+
+        $ptEstateId = $data['pt_estate'] ?? null;
+        $blokId = $data['blok_id'] ?? null;
+
+        // Ambil array dari input form
+        $tanamanIds = $data['tanaman_id'] ?? [];
+        $rfidTanamanArray = $data['rfid_tanaman'] ?? []; // RFID asli
+        $newRfidArray = $data['new_rfid'] ?? []; // RFID baru (jika diisi)
+        $updateRfidCheckboxes = $data['update_rfid'] ?? []; // Checkbox update RFID
+        $lossesIdArray = $data['penyebab_loses'] ?? []; // ID penyebab loses
+        $deskripsiLosesArray = $data['deskripsi_loses'] ?? []; // Deskripsi loses
+        $updateLossesCheckboxes = $data['update_losses'] ?? []; // Checkbox update losses
+        $tanamanImages = $files['tanaman_image'] ?? []; // File gambar (jika ada)
 
         $hsId = $this->getHsIdByPtEstateAndBlok($ptEstateId, $blokId);
 
@@ -415,48 +424,98 @@ class IdentifikasiTanamanController extends ResourceController
         }
 
         $tanamanModel = new TanamanModel();
-        $currentTime =
-            date('Y-m-d H:i:s');
+        $currentTime = date('Y-m-d H:i:s');
 
-        foreach ($rfidTanaman as $index => $currentRfid) {
-            $rfidToUse = isset($newRfid[$index]) && !empty($newRfid[$index]) ? $newRfid[$index] : $currentRfid;
+        if (!is_array($tanamanIds) || empty($tanamanIds)) {
+            return $this->response->setJSON(['success' => false, 'message' => 'Tidak ada ID tanaman yang dikirim untuk diperbarui.']);
+        }
 
-            // Validate new RFID (if provided and not null or empty)
-            if (!empty($newRfid[$index])) {
-                $existingNewRfid = $tanamanModel
-                    ->where('rfid_tanaman', $newRfid[$index])
-                    ->where('tgl_akhir_identifikasi', null)
-                    ->first();
-
-                if ($existingNewRfid) {
-                    return $this->response->setJSON(['success' => false, 'message' => 'RFID ' . $newRfid[$index] . ' sudah terdaftar di tanaman yang aktif, tolong diganti.']);
-                }
+        foreach ($tanamanIds as $index => $tanamanIdToUpdate) {
+            // Pastikan tanamanIdToUpdate adalah integer yang valid
+            if (!is_numeric($tanamanIdToUpdate) || empty($tanamanIdToUpdate)) {
+                // Lewati item ini atau kembalikan error
+                continue;
             }
 
+            $currentRfid = $rfidTanamanArray[$index] ?? null;
+            $tanamanData = []; // Inisialisasi data untuk tanaman saat ini
 
-            $lsId = isset($lossesId[$index]) && !empty($lossesId[$index]) ? $lossesId[$index] : null;
-            $deskripsi = isset($deskripsiLoses[$index]) && !empty($deskripsiLoses[$index]) ? $deskripsiLoses[$index] : null;
+            // --- Logika untuk update RFID ---
+            $rfidToUse = $currentRfid;
+            $isUpdateRfidChecked = isset($updateRfidCheckboxes[$index]) && $updateRfidCheckboxes[$index] === 'on';
 
-            $tanamanData = [
-                'rfid_tanaman' => $rfidToUse,
-            ];
+            if ($isUpdateRfidChecked) {
+                $newRfidValue = $newRfidArray[$index] ?? '';
+                if (!empty($newRfidValue)) {
+                    // Validasi RFID baru: cek apakah sudah terdaftar di tanaman aktif LAIN
+                    $existingNewRfid = $tanamanModel
+                        ->where('rfid_tanaman', $newRfidValue)
+                        ->where('tgl_akhir_identifikasi', null) // Hanya cek di tanaman aktif
+                        ->where('tanaman_id !=', $tanamanIdToUpdate) // KECUALI tanaman yang sedang di-update
+                        ->first();
 
-            if ($lsId !== null && $deskripsi !== null) {
+                    if ($existingNewRfid) {
+                        return $this->response->setJSON(['success' => false, 'message' => 'RFID ' . $newRfidValue . ' sudah terdaftar di tanaman aktif lain (ID: ' . $existingNewRfid['tanaman_id'] . '), tolong diganti.']);
+                    }
+                    $rfidToUse = $newRfidValue;
+                }
+            }
+            $tanamanData['rfid_tanaman'] = $rfidToUse;
+
+            // --- Logika untuk update Losses ---
+            $isUpdateLossesChecked = isset($updateLossesCheckboxes[$index]) && $updateLossesCheckboxes[$index] === 'on';
+            $lsId = $lossesIdArray[$index] ?? null;
+            $deskripsi = $deskripsiLosesArray[$index] ?? ''; // Deskripsi boleh kosong
+
+            if ($isUpdateLossesChecked && $lsId !== null) {
                 $tanamanData['is_loses'] = 'Y';
                 $tanamanData['losses_id'] = $lsId;
                 $tanamanData['deskripsi_loses'] = $deskripsi;
                 $tanamanData['tgl_akhir_identifikasi'] = $currentTime;
+
+                // Asumsi ID status 'Loses' adalah 2
+                $tanamanData['status_id'] = 2;
+
+                // --- Handle Image Upload for Losses ---
+                if (isset($tanamanImages[$index]) && $tanamanImages[$index]->isValid() && !$tanamanImages[$index]->hasMoved()) {
+                    $file = $tanamanImages[$index];
+                    $newName = $file->getRandomName(); // Nama unik untuk file
+                    $uploadPath = ROOTPATH . 'public/uploads/tanaman_images/'; // Sesuaikan path ini
+
+                    // Pastikan direktori ada
+                    if (!is_dir($uploadPath)) {
+                        mkdir($uploadPath, 0777, true);
+                    }
+
+                    if ($file->move($uploadPath, $newName)) {
+                        $tanamanData['gambar_tanaman'] = 'uploads/tanaman_images/' . $newName; // Simpan path relatif di DB
+                    } else {
+                        return $this->response->setJSON(['success' => false, 'message' => 'Gagal mengupload gambar untuk tanaman ID ' . $tanamanIdToUpdate . '.']);
+                    }
+                }
             } else {
-                $tanamanData['is_loses'] = 'N';
-                $tanamanData['losses_id'] = null;
-                $tanamanData['deskripsi_loses'] = null;
-                $tanamanData['tgl_akhir_identifikasi'] = null;
+                // Logika untuk mereset loses jika checkbox tidak dicentang atau lsId null
+                $currentTanaman = $tanamanModel->find($tanamanIdToUpdate);
+                if ($currentTanaman && $currentTanaman['is_loses'] === 'Y') {
+                    $tanamanData['is_loses'] = 'N';
+                    $tanamanData['losses_id'] = null;
+                    $tanamanData['deskripsi_loses'] = null;
+                    $tanamanData['tgl_akhir_identifikasi'] = null;
+                    // Asumsi ID status 'Aktif' adalah 1
+                    $tanamanData['status_id'] = 1;
+                }
             }
 
-            $tanamanModel->where('rfid_tanaman', $currentRfid)->set($tanamanData)->update();
+            // --- Lakukan Update Berdasarkan PRIMARY KEY (tanaman_id) ---
+            $updateResult = $tanamanModel->update($tanamanIdToUpdate, $tanamanData);
+
+            if (!$updateResult) {
+                // Mengumpulkan error jika diperlukan
+                // $errors[] = "Gagal memperbarui Tanaman ID {$tanamanIdToUpdate}. Errors: " . json_encode($tanamanModel->errors());
+            }
         }
 
-        return $this->response->setJSON(['success' => true, 'message' => 'Data updated successfully.']);
+        return $this->response->setJSON(['success' => true, 'message' => 'Data berhasil diperbarui.']);
     }
     public function predictDisease()
     {
